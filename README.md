@@ -10,44 +10,37 @@ The application extracts members across multiple source Telegram groups, dedupli
 
 ```mermaid
 flowchart TD
-    subgraph GitHub_Actions["GitHub Actions (Cloud CI/CD Runner)"]
-        Trigger["Triggers: Cron (Every 6h) / Push / Manual Dispatch"]
-        SessionRestore["Restore Telethon Session File (Base64 Secret)"]
-        PythonEnv["Set up Python 3.11 + Dependencies"]
+    subgraph GitHub_Actions["GitHub Actions Runner"]
+        Trigger["Triggers: Cron Every 6h / Push / Manual Dispatch"]
+        SessionRestore["Restore Telethon Session File"]
+        PythonEnv["Set up Python 3.11 Environment"]
         Trigger --> SessionRestore --> PythonEnv
     end
 
-    subgraph Telegram_Cloud["Telegram API (MTProto)"]
+    subgraph Telegram_Cloud["Telegram MTProto API"]
         OldGroup1["Source Group 1 (Python Language Proxy)"]
-        OldGroup2["Source Group 2 (Training, Proxy & Job Support)"]
+        OldGroup2["Source Group 2 (Training, Proxy and Job Support)"]
         TargetGroup["Target Group (Aws Azure Job Support)"]
     end
 
-    subgraph Database_Layer["Supabase PostgreSQL (IPv4 Session Pooler)"]
-        UsersTable[("users table:
-        user_id (PK)
-        username
-        first_name, last_name
-        add_status
-        joined_at, fetched_at")]
+    subgraph Database_Layer["Supabase PostgreSQL"]
+        UsersTable[("PostgreSQL: users table")]
     end
 
-    subgraph Pipeline["Execution Pipeline (run_fetch.py)"]
-        MemberService["member_service.py
-        Extract & Deduplicate Members"]
-        DBSave["database.py
-        Bulk Upsert (ON CONFLICT DO NOTHING)"]
-        AdderService["adder_service.py
-        Direct Add Loop + Anti-Flood Safeguards"]
+    subgraph Pipeline["Application Pipeline (run_fetch.py)"]
+        MemberService["member_service.py: Extract and Deduplicate"]
+        DBSave["database.py: Upsert Members"]
+        AdderService["adder_service.py: Direct Add and Anti-Flood"]
     end
 
     PythonEnv --> Pipeline
-    OldGroup1 & OldGroup2 -->|iter_participants()| MemberService
+    OldGroup1 -->|"iter_participants"| MemberService
+    OldGroup2 -->|"iter_participants"| MemberService
     MemberService --> DBSave
     DBSave --> UsersTable
-    UsersTable -->|get_pending_add_members()| AdderService
-    AdderService -->|InviteToChannelRequest()| TargetGroup
-    AdderService -->|mark_add_result(status)| UsersTable
+    UsersTable -->|"get_pending_add_members"| AdderService
+    AdderService -->|"InviteToChannelRequest"| TargetGroup
+    AdderService -->|"mark_add_result"| UsersTable
 ```
 
 ---
