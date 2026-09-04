@@ -25,14 +25,13 @@ load_dotenv()
 from app.telegram import client
 from app import database
 from app.services.member_service import fetch_and_save
-from app.services.notification_service import send_bulk_invites
-from telethon.tl.functions.messages import ExportChatInviteRequest  # pyrefly: ignore [missing-import]
+from app.services.adder_service import direct_add_members
 
 NEW_GROUP_ID = int(os.getenv("NEW_GROUP_ID"))
 
 
 async def main():
-    print("=== [run_fetch.py] Fetch & Notify ===\n")
+    print("=== [run_fetch.py] Fetch & Direct Add ===\n")
 
     # Connect — session file already restored by workflow
     await client.start()
@@ -49,15 +48,9 @@ async def main():
         await database.close_pool()
         return
 
-    # Generate invite link for new group
-    print("Generating invite link...")
-    result = await client(ExportChatInviteRequest(peer=NEW_GROUP_ID))
-    invite_link = result.link
-    print(f"Invite link: {invite_link}\n")
-
-    # Send DMs to all unnotified members
-    stats = await send_bulk_invites(invite_link)
-    print(f"\nDone. Sent: {stats['sent']} | Failed: {stats['failed']}")
+    # Directly add members to the new group (batch of 50 per run)
+    stats = await direct_add_members(client, NEW_GROUP_ID, max_to_add=50)
+    print(f"\n[run_fetch.py] Direct add batch results: {stats}")
 
     await client.disconnect()
     await database.close_pool()

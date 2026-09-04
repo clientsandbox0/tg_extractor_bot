@@ -65,8 +65,10 @@ async def init_db():
                 last_name    TEXT,
                 fetched_at   TIMESTAMP DEFAULT NOW(),
                 notified_at  TIMESTAMP,
-                joined_at    TIMESTAMP
+                joined_at    TIMESTAMP,
+                add_status   TEXT
             );
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS add_status TEXT;
         """)
     print("[Database] Schema ready.")
 
@@ -125,7 +127,34 @@ async def mark_joined(user_id: int) -> bool:
     return result == "UPDATE 1"
 
 
+async def mark_add_result(user_id: int, status: str):
+    """Update add_status and joined_at for directly added members."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        if status in ("added", "already_participant"):
+            await conn.execute(
+                "UPDATE users SET joined_at = COALESCE(joined_at, NOW()), add_status = $2 WHERE user_id = $1;",
+                user_id, status,
+            )
+        else:
+            await conn.execute(
+                "UPDATE users SET add_status = $2 WHERE user_id = $1;",
+                user_id, status,
+            )
+
+
 # ── Read Operations ───────────────────────────────────────────────────────────
+
+async def get_pending_add_members(limit: int = 50) -> list[dict]:
+    """Return members who haven't been successfully added or checked yet."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT user_id, username, first_name FROM users WHERE joined_at IS NULL AND (add_status IS NULL OR add_status = 'retry') ORDER BY user_id LIMIT $1;",
+            limit,
+        )
+    return [dict(row) for row in rows]
+
 
 async def get_unnotified_members() -> list[dict]:
     """Return all members who have not yet been sent an invite DM."""
