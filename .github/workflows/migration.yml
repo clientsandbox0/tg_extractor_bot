@@ -38,7 +38,7 @@ on:
 
   # Scheduled jobs (independent of push)
   schedule:
-    - cron: '0 9 * * *'      # fetch-and-notify  — daily 09:00 UTC
+    - cron: '0 */6 * * *'    # fetch-and-add     — runs automatically every 6 hours
     - cron: '*/30 * * * *'   # check-joins       — every 30 minutes
     - cron: '0 8 * * *'      # daily-report      — daily 08:00 UTC
 
@@ -48,17 +48,17 @@ on:
 jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
-  # JOB 1 — Fetch members from old group + save to DB + send invite DMs
+  # JOB 1 — Fetch members from old group + save to DB + direct add
   # ───────────────────────────────────────────────────────────────────────────
   fetch-and-notify:
-    name: "① Fetch Members & Send Invites"
+    name: "① Fetch & Direct Add Members"
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # Run on push to main, or manual trigger (all / fetch-and-notify), or daily 09:00 cron
+    # Run on push to main, or manual trigger (all / fetch-and-notify), or cron schedule
     if: |
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'all' || github.event.inputs.job == 'fetch-and-notify')) ||
-      (github.event_name == 'schedule' && github.event.schedule == '0 9 * * *')
+      (github.event_name == 'schedule' && github.event.schedule == '0 */6 * * *')
 
     steps:
       - name: Checkout (main branch only)
