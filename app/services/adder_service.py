@@ -94,7 +94,8 @@ async def direct_add_members(client: TelegramClient, target_group_id: int, max_t
                 break
 
         except PeerFloodError:
-            print("[AdderService] ⚠️ PeerFloodError: Telegram is limiting add requests for today. Stopping batch.")
+            print("[AdderService] ⚠️ PeerFloodError: Telegram daily limit reached for adding users directly.")
+            print("[AdderService] All progress saved to database. The next scheduled run will resume automatically.")
             break
 
         except Exception as e:
