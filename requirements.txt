@@ -1,0 +1,4 @@
+Telethon
+python-dotenv
+asyncpg
+python-telegram-bot==20.*

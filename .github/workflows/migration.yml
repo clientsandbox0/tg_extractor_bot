@@ -1,0 +1,169 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# migration.yml — Single unified workflow
+#
+# BRANCH:   Only triggers on `main`
+#
+# TRIGGERS:
+#   - push to main                      → runs full pipeline automatically
+#   - workflow_dispatch (manual)        → run any single job on demand
+#   - schedule                          → automated jobs on cron
+#
+# JOBS (run in order):
+#   1. fetch-and-notify   → fetch old group members, save to DB, send DMs
+#   2. check-joins        → poll new group for joins, update DB
+#   3. daily-report       → send migration stats to admin via bot
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Telegram Migration Pipeline
+
+on:
+  # Auto-trigger on push to main only
+  push:
+    branches:
+      - main
+
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Which job to run (leave empty to run all)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - fetch-and-notify
+          - check-joins
+          - daily-report
+
+  # Scheduled jobs (independent of push)
+  schedule:
+    - cron: '0 9 * * *'      # fetch-and-notify  — daily 09:00 UTC
+    - cron: '*/30 * * * *'   # check-joins       — every 30 minutes
+    - cron: '0 8 * * *'      # daily-report      — daily 08:00 UTC
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Jobs
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 1 — Fetch members from old group + save to DB + send invite DMs
+  # ───────────────────────────────────────────────────────────────────────────
+  fetch-and-notify:
+    name: "① Fetch Members & Send Invites"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Run on push to main, or manual trigger (all / fetch-and-notify), or daily 09:00 cron
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'all' || github.event.inputs.job == 'fetch-and-notify')) ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 9 * * *')
+
+    steps:
+      - name: Checkout (main branch only)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore Telethon session file
+        run: |
+          echo "${{ secrets.TELEGRAM_SESSION }}" | base64 --decode > telegram_migration.session
+
+      - name: Run — Fetch & Notify
+        env:
+          TELEGRAM_API_ID:    ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH:  ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OLD_GROUP_IDS:      ${{ secrets.OLD_GROUP_IDS }}
+          NEW_GROUP_ID:       ${{ secrets.NEW_GROUP_ID }}
+          DATABASE_URL:       ${{ secrets.DATABASE_URL }}
+        run: python scripts/run_fetch.py
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 2 — Poll new group for joins + update DB
+  # ───────────────────────────────────────────────────────────────────────────
+  check-joins:
+    name: "② Poll New Group Joins"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: fetch-and-notify   # waits for job 1 if both triggered together
+    if: |
+      always() &&
+      (
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'all' || github.event.inputs.job == 'check-joins')) ||
+        (github.event_name == 'schedule' && github.event.schedule == '*/30 * * * *')
+      )
+
+    steps:
+      - name: Checkout (main branch only)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore Telethon session file
+        run: |
+          echo "${{ secrets.TELEGRAM_SESSION }}" | base64 --decode > telegram_migration.session
+
+      - name: Run — Check Joins
+        env:
+          TELEGRAM_API_ID:   ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          NEW_GROUP_ID:      ${{ secrets.NEW_GROUP_ID }}
+          DATABASE_URL:      ${{ secrets.DATABASE_URL }}
+        run: python scripts/run_check_joins.py
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # JOB 3 — Send daily migration stats report to admin
+  # ───────────────────────────────────────────────────────────────────────────
+  daily-report:
+    name: "③ Daily Migration Report"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: check-joins        # waits for job 2 if both triggered together
+    if: |
+      always() &&
+      (
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'all' || github.event.inputs.job == 'daily-report')) ||
+        (github.event_name == 'schedule' && github.event.schedule == '0 8 * * *')
+      )
+
+    steps:
+      - name: Checkout (main branch only)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run — Daily Report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ADMIN_USER_ID:      ${{ secrets.ADMIN_USER_ID }}
+          DATABASE_URL:       ${{ secrets.DATABASE_URL }}
+        run: python scripts/run_report.py

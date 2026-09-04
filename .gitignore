@@ -1,0 +1,17 @@
+# Telegram session — contains authenticated credentials
+*.session
+
+# Environment — contains API keys and DB passwords
+.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Data output
+data/
